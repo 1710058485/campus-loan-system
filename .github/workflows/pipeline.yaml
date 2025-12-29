@@ -1,0 +1,165 @@
+name: Campus Loan System CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# 1. 关键权限设置：允许流水线向 GitHub Packages 写数据
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Job 1: 运行测试 (Inventory Service)
+  inventory-service-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: inventory-service/package-lock.json
+      - name: Install & Test Inventory Service
+        working-directory: ./inventory-service
+        run: |
+          npm ci
+          npm test
+
+  # Job 2: 运行测试 (Loan Service)
+  loan-service-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: loan-service/package-lock.json
+      - name: Install & Test Loan Service
+        working-directory: ./loan-service
+        run: |
+          npm ci
+          npm test
+
+  # Job 3: 运行测试 (Notification Service)
+  notification-service-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: notification-service/package-lock.json
+      - name: Install & Test Notification Service
+        working-directory: ./notification-service
+        run: |
+          npm ci
+          npm test
+
+  # Job 4: 运行测试 (Web App)
+  web-app-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: web-app/package-lock.json
+      - name: Install & Test Web App
+        working-directory: ./web-app
+        run: |
+          npm install
+          npm run lint
+          npm test run
+          npm run build
+
+  # Job 5: 构建并发布到测试环境 (GHCR)
+  build-and-push-test:
+    needs: [inventory-service-test, loan-service-test, notification-service-test, web-app-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Inventory Service (Test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./inventory-service
+          push: true
+          tags: ghcr.io/${{ github.repository }}/inventory-service:test
+
+      - name: Build and push Loan Service (Test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./loan-service
+          push: true
+          tags: ghcr.io/${{ github.repository }}/loan-service:test
+
+      - name: Build and push Notification Service (Test)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./notification-service
+          push: true
+          tags: ghcr.io/${{ github.repository }}/notification-service:test
+
+  # Job 6: 发布到生产环境 (人工审批 + Latest Tag)
+  deploy-prod:
+    needs: build-and-push-test
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+      url: https://github.com/${{ github.repository }}/pkgs/container/loan-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Inventory Service (Prod)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./inventory-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/inventory-service:latest
+            ghcr.io/${{ github.repository }}/inventory-service:${{ github.sha }}
+
+      - name: Build and push Loan Service (Prod)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./loan-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/loan-service:latest
+            ghcr.io/${{ github.repository }}/loan-service:${{ github.sha }}
+
+      - name: Build and push Notification Service (Prod)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./notification-service
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/notification-service:latest
+            ghcr.io/${{ github.repository }}/notification-service:${{ github.sha }}
