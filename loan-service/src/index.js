@@ -215,6 +215,10 @@ app.post('/returns', checkJwt, async (req, res) => {
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`Loan Service running on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Loan Service running on port ${PORT}`);
+    });
+}
+
+module.exports = app;

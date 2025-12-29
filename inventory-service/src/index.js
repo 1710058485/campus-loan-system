@@ -108,6 +108,10 @@ app.delete('/devices/:id', async (req, res) => {
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 const PORT = process.env.PORT || 3002; // 注意：这是 3002 端口
-app.listen(PORT, () => {
-    log('INFO', `Inventory Service running on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        log('INFO', `Inventory Service running on port ${PORT}`);
+    });
+}
+
+module.exports = app;

@@ -48,4 +48,8 @@ async function sendEmailMock(data) {
     return new Promise(resolve => setTimeout(resolve, 500)); // 模拟网络延迟
 }
 
-startConsumer();
+if (require.main === module) {
+    startConsumer();
+}
+
+module.exports = { startConsumer, sendEmailMock };
