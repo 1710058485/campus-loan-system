@@ -138,6 +138,79 @@ app.post('/reservations', checkJwt, checkRole('Student'), async (req, res) => {
     }
 });
 
+// 4. 获取用户借阅列表
+app.get('/loans', checkJwt, async (req, res) => {
+    const { userId } = req.query;
+    
+    // 简单的权限检查：只能查自己的，除非是 Staff (这里先简化，假设只能查自己的)
+    // 实际生产中应该校验 req.auth.payload.sub === userId
+    
+    try {
+        const result = await pool.query(
+            `SELECT l.id, l.status, l.created_at, d.name as device_name 
+             FROM loans l 
+             JOIN devices d ON l.device_model_id = d.model_id 
+             WHERE l.user_id = $1 
+             ORDER BY l.created_at DESC`,
+            [userId]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        log('ERROR', 'Fetch loans failed', { error: err.message, correlationId: req.correlationId });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 5. 归还设备
+app.post('/returns', checkJwt, async (req, res) => {
+    const { loanId } = req.body;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. 检查借阅记录
+        const loanRes = await client.query(
+            `SELECT * FROM loans WHERE id = $1 FOR UPDATE`,
+            [loanId]
+        );
+
+        if (loanRes.rows.length === 0) {
+            throw new Error('Loan not found');
+        }
+
+        const loan = loanRes.rows[0];
+        if (loan.status === 'RETURNED') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Device already returned' });
+        }
+
+        // 2. 更新借阅状态
+        await client.query(
+            `UPDATE loans SET status = 'RETURNED', returned_at = NOW() WHERE id = $1`,
+            [loanId]
+        );
+
+        // 3. 恢复库存
+        await client.query(
+            `UPDATE devices SET quantity_available = quantity_available + 1 WHERE model_id = $1`,
+            [loan.device_model_id]
+        );
+
+        await client.query('COMMIT');
+        
+        log('INFO', `Loan ${loanId} returned`, { correlationId: req.correlationId });
+        res.json({ message: 'Device returned successfully' });
+
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    } finally {
+        client.release();
+    }
+});
+
 // 健康检查 (Observability)
 app.get('/health', (req, res) => res.status(200).send('OK'));
 

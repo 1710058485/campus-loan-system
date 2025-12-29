@@ -15,7 +15,8 @@ CREATE TABLE loans (
     user_id VARCHAR(50),
     device_model_id INT,
     status VARCHAR(20),
-    created_at TIMESTAMP
+    created_at TIMESTAMP,
+    returned_at TIMESTAMP
 );
 
 -- 4. 插入测试数据
