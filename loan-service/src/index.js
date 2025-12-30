@@ -104,8 +104,17 @@ app.post('/reservations', checkJwt, checkRole('Student'), async (req, res) => {
         );
 
         // [关键点 3] 创建借阅记录
+        // Standard loan duration is 2 days
         const loanRes = await client.query(
-            `INSERT INTO loans (user_id, device_model_id, status, created_at) VALUES ($1, $2, 'RESERVED', NOW()) RETURNING id`,
+            `INSERT INTO loans (user_id, device_model_id, status, created_at, expected_return_date) 
+             VALUES ($1, $2, 'RESERVED', NOW(), NOW() + INTERVAL '2 days') 
+             RETURNING id, expected_return_date`,
+            [userId, deviceModelId]
+        );
+
+        // [关键点 3.5] 从候补名单中移除 (如果存在)
+        await client.query(
+            `DELETE FROM waitlist WHERE user_id = $1 AND device_model_id = $2`,
             [userId, deviceModelId]
         );
 
@@ -118,7 +127,8 @@ app.post('/reservations', checkJwt, checkRole('Student'), async (req, res) => {
             const message = JSON.stringify({
                 event: 'LOAN_CREATED',
                 email: 'student@uni.ac.uk', // 这里后续应该从Auth0拿
-                loanId: loanRes.rows[0].id
+                loanId: loanRes.rows[0].id,
+                expectedReturnDate: loanRes.rows[0].expected_return_date
             });
             channel.sendToQueue('loan_notifications', Buffer.from(message));
             console.log("Notification event published");
@@ -126,7 +136,8 @@ app.post('/reservations', checkJwt, checkRole('Student'), async (req, res) => {
 
         res.status(201).json({ 
             message: 'Reservation successful', 
-            loanId: loanRes.rows[0].id 
+            loanId: loanRes.rows[0].id,
+            expectedReturnDate: loanRes.rows[0].expected_return_date
         });
 
     } catch (e) {
@@ -138,22 +149,125 @@ app.post('/reservations', checkJwt, checkRole('Student'), async (req, res) => {
     }
 });
 
-// 4. 获取用户借阅列表
-app.get('/loans', checkJwt, async (req, res) => {
+// 新增 API: 加入候补名单 (Subscribe)
+// POST /waitlist
+app.post('/waitlist', checkJwt, checkRole('Student'), async (req, res) => {
+    const { userId, deviceModelId, email } = req.body;
+    log('INFO', 'Waitlist subscription received', { correlationId: req.correlationId, userId, deviceModelId });
+
+    try {
+        // 1. 检查是否已经存在
+        const existing = await pool.query(
+            'SELECT id FROM waitlist WHERE user_id = $1 AND device_model_id = $2',
+            [userId, deviceModelId]
+        );
+
+        if (existing.rows.length > 0) {
+            // 已经加入过了，直接返回成功或提示
+            return res.status(200).json({ message: 'Already on waitlist', waitlistId: existing.rows[0].id });
+        }
+
+        const result = await pool.query(
+            'INSERT INTO waitlist (user_id, device_model_id, email, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id',
+            [userId, deviceModelId, email]
+        );
+        res.status(201).json({ message: 'Subscribed to waitlist', waitlistId: result.rows[0].id });
+    } catch (err) {
+        log('ERROR', 'Waitlist subscription failed', { error: err.message, correlationId: req.correlationId });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 新增 API: 获取用户的候补名单
+// GET /waitlist
+app.get('/waitlist', checkJwt, async (req, res) => {
     const { userId } = req.query;
-    
-    // 简单的权限检查：只能查自己的，除非是 Staff (这里先简化，假设只能查自己的)
-    // 实际生产中应该校验 req.auth.payload.sub === userId
+    log('INFO', 'Fetching user waitlist', { correlationId: req.correlationId, userId });
+
+    try {
+        const result = await pool.query(
+            `SELECT w.id, w.device_model_id, w.created_at, d.name as device_name, d.quantity_available 
+             FROM waitlist w 
+             JOIN devices d ON w.device_model_id = d.model_id 
+             WHERE w.user_id = $1 
+             ORDER BY w.created_at DESC`,
+            [userId]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        log('ERROR', 'Fetch waitlist failed', { error: err.message, correlationId: req.correlationId });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 新增 API: 标记设备为已领取 (Staff)
+// POST /collect
+app.post('/collect', checkJwt, checkRole('Staff'), async (req, res) => {
+    const { loanId } = req.body;
+    log('INFO', 'Collection request received', { correlationId: req.correlationId, loanId });
     
     try {
         const result = await pool.query(
-            `SELECT l.id, l.status, l.created_at, d.name as device_name 
-             FROM loans l 
-             JOIN devices d ON l.device_model_id = d.model_id 
-             WHERE l.user_id = $1 
-             ORDER BY l.created_at DESC`,
-            [userId]
+            `UPDATE loans SET status = 'COLLECTED' WHERE id = $1 AND status = 'RESERVED' RETURNING *`,
+            [loanId]
         );
+        
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'Loan not found or not in RESERVED state' });
+        }
+
+        // 触发领取通知
+        if (channel) {
+             const message = JSON.stringify({
+                 event: 'LOAN_COLLECTED',
+                 email: 'student@uni.ac.uk', // Should use user's email
+                 loanId: loanId
+             });
+             channel.sendToQueue('loan_notifications', Buffer.from(message));
+        }
+
+        res.json({ message: 'Device marked as collected' });
+    } catch (err) {
+        log('ERROR', 'Collection mark failed', { error: err.message, correlationId: req.correlationId });
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// 4. 获取借阅列表 (Staff可看所有，用户只能看自己)
+app.get('/loans', checkJwt, async (req, res) => {
+    const { userId } = req.query;
+    const auth0Id = req.auth.payload.sub;
+    const roles = req.auth.payload['https://campus-loan-system/roles'] || [];
+    const isStaff = roles.includes('Staff');
+
+    try {
+        let query;
+        let params;
+
+        if (isStaff && !userId) {
+            // Staff 查看所有
+            query = `SELECT l.id, l.status, l.created_at, l.expected_return_date, d.name as device_name, l.user_id 
+                     FROM loans l 
+                     JOIN devices d ON l.device_model_id = d.model_id 
+                     ORDER BY l.created_at DESC`;
+            params = [];
+        } else {
+            // 用户只能查自己的，或者 Staff 查特定用户的
+            // 安全检查：如果不是 Staff，查询的 userId 必须是自己的
+            const targetId = userId || auth0Id;
+            if (!isStaff && targetId !== auth0Id) {
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+            
+            query = `SELECT l.id, l.status, l.created_at, l.expected_return_date, d.name as device_name 
+                     FROM loans l 
+                     JOIN devices d ON l.device_model_id = d.model_id 
+                     WHERE l.user_id = $1 
+                     ORDER BY l.created_at DESC`;
+            params = [targetId];
+        }
+
+        const result = await pool.query(query, params);
         res.json(result.rows);
     } catch (err) {
         log('ERROR', 'Fetch loans failed', { error: err.message, correlationId: req.correlationId });
@@ -161,8 +275,8 @@ app.get('/loans', checkJwt, async (req, res) => {
     }
 });
 
-// 5. 归还设备
-app.post('/returns', checkJwt, async (req, res) => {
+// 5. 归还设备 (Staff Only)
+app.post('/returns', checkJwt, checkRole('Staff'), async (req, res) => {
     const { loanId } = req.body;
     const client = await pool.connect();
 
@@ -197,7 +311,39 @@ app.post('/returns', checkJwt, async (req, res) => {
             [loan.device_model_id]
         );
 
+        // 4. 检查候补名单并通知
+        const waitlistRes = await client.query(
+            `SELECT * FROM waitlist WHERE device_model_id = $1 ORDER BY created_at ASC`,
+            [loan.device_model_id]
+        );
+
+        if (waitlistRes.rows.length > 0) {
+            // 通知所有订阅者，或者只通知第一个。通常是通知所有，谁先抢到算谁的。
+            // 需求: "On device return, any waitlisted students for that model are notified." -> implies ALL.
+            for (const waiter of waitlistRes.rows) {
+                 if (channel) {
+                    const message = JSON.stringify({
+                        event: 'WAITLIST_AVAILABLE',
+                        email: waiter.email,
+                        deviceModelId: loan.device_model_id
+                    });
+                    channel.sendToQueue('loan_notifications', Buffer.from(message));
+                }
+            }
+            // Optional: delete from waitlist? Probably not until they reserve or unsubscribe.
+        }
+
         await client.query('COMMIT');
+        
+        // 5. 触发归还通知给当前用户
+        if (channel) {
+            const message = JSON.stringify({
+                event: 'LOAN_RETURNED',
+                email: 'student@uni.ac.uk', // Should use user's email
+                loanId: loanId
+            });
+            channel.sendToQueue('loan_notifications', Buffer.from(message));
+        }
         
         log('INFO', `Loan ${loanId} returned`, { correlationId: req.correlationId });
         res.json({ message: 'Device returned successfully' });

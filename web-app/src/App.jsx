@@ -8,6 +8,8 @@ function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, getAccessTokenSilently } = useAuth0();
   const [devices, setDevices] = useState([]);
   const [myLoans, setMyLoans] = useState([]); // 新增：用户借阅列表
+  const [myWaitlist, setMyWaitlist] = useState([]); // 新增：用户候补名单
+  const [allLoans, setAllLoans] = useState([]); // 新增：Staff 查看所有借阅
   const [status, setStatus] = useState('');
   const [userRole, setUserRole] = useState(''); // 存储当前用户角色
 
@@ -35,13 +37,46 @@ function App() {
     }
   }, [user, getAccessTokenSilently]);
 
+  // 新增：获取我的候补名单
+  const fetchMyWaitlist = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await axios.get(`http://localhost:3001/waitlist?userId=${user.sub}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMyWaitlist(res.data);
+    } catch (err) {
+      console.error("Failed to fetch waitlist", err);
+    }
+  }, [user, getAccessTokenSilently]);
+
+  // 新增：Staff 获取所有借阅
+  const fetchAllLoans = useCallback(async () => {
+    if (userRole !== 'Staff') return;
+    try {
+      const token = await getAccessTokenSilently();
+      const res = await axios.get('http://localhost:3001/loans', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAllLoans(res.data);
+    } catch (err) {
+      console.error("Failed to fetch all loans", err);
+    }
+  }, [userRole, getAccessTokenSilently]);
+
   // 1. 获取设备列表 (从 Inventory Service)
   useEffect(() => {
     fetchDevices();
     if (isAuthenticated) {
-        fetchMyLoans();
+        if (userRole === 'Staff') {
+            fetchAllLoans();
+        } else {
+            fetchMyLoans();
+            fetchMyWaitlist();
+        }
     }
-  }, [fetchDevices, fetchMyLoans, isAuthenticated]);
+  }, [fetchDevices, fetchMyLoans, fetchMyWaitlist, fetchAllLoans, isAuthenticated, userRole]);
 
   // 2. 获取用户角色 (从 Token 解析)
   useEffect(() => {
@@ -79,6 +114,7 @@ function App() {
       setStatus(`Success! Loan ID: ${response.data.loanId}`);
       fetchDevices(); // 刷新设备列表
       fetchMyLoans(); // 刷新我的借阅列表
+      fetchMyWaitlist(); // 刷新我的候补名单
     } catch (error) {
       if (error.response) {
         // 展示 HTTP 错误状态码，比如 403 Forbidden, 409 Conflict
@@ -99,10 +135,46 @@ function App() {
         );
         alert('Device returned successfully!');
         fetchDevices();
-        fetchMyLoans();
+        if (userRole === 'Staff') {
+            fetchAllLoans();
+        } else {
+            fetchMyLoans();
+        }
     } catch (error) {
         console.error(error);
         alert('Failed to return device');
+    }
+  };
+
+  // Staff: 标记为已领取
+  const markCollected = async (loanId) => {
+    try {
+        const token = await getAccessTokenSilently();
+        await axios.post('http://localhost:3001/collect',
+            { loanId },
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        alert('Device marked as collected!');
+        fetchAllLoans();
+    } catch (error) {
+        console.error(error);
+        alert('Failed to mark collected');
+    }
+  };
+
+  // 新增：加入候补名单
+  const joinWaitlist = async (modelId) => {
+    try {
+        const token = await getAccessTokenSilently();
+        await axios.post('http://localhost:3001/waitlist',
+            { userId: user.sub, deviceModelId: modelId, email: user.email },
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        alert('Joined waitlist successfully! You will be notified when the device is available.');
+        fetchMyWaitlist(); // 刷新
+    } catch (error) {
+        console.error(error);
+        alert('Failed to join waitlist');
     }
   };
 
@@ -145,6 +217,34 @@ function App() {
     }
   };
 
+  // 辅助函数：计算剩余天数状态
+  const getLoanStatusBadge = (loan) => {
+    if (loan.status === 'RETURNED') {
+        return <span className="badge bg-secondary">RETURNED</span>;
+    }
+    if (loan.status === 'RESERVED') {
+        return <span className="badge bg-primary">RESERVED (Pick up needed)</span>;
+    }
+    
+    // Status is COLLECTED, check due date
+    if (loan.status === 'COLLECTED' && loan.expected_return_date) {
+        const dueDate = new Date(loan.expected_return_date);
+        const now = new Date();
+        const diffTime = dueDate - now;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0) {
+            return <span className="badge bg-danger">OVERDUE ({Math.abs(diffDays)} days)</span>;
+        } else if (diffDays <= 1) {
+            return <span className="badge bg-warning text-dark">DUE SOON (Return by tomorrow)</span>;
+        } else {
+             return <span className="badge bg-success">ACTIVE ({diffDays} days left)</span>;
+        }
+    }
+
+    return <span className="badge bg-info text-dark">{loan.status}</span>;
+  };
+
   return (
     <div className="container">
       <h1>Campus Device Loan System</h1>
@@ -169,6 +269,61 @@ function App() {
               <button className="btn btn-secondary btn-sm" onClick={() => logout()}>Log Out</button>
             </div>
           </div>
+
+          {userRole === 'Staff' && (
+            <div className="card mb-4">
+              <div className="card-header bg-primary text-white">Loan Management</div>
+              <div className="card-body">
+                {allLoans.length === 0 ? <p>No active loans.</p> : (
+                  <div className="table-responsive">
+                    <table className="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>User</th>
+                                <th>Device</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {allLoans.map(loan => (
+                                <tr key={loan.id}>
+                                    <td><small>{loan.id}</small></td>
+                                    <td><small>{loan.user_id}</small></td>
+                                    <td>{loan.device_name}</td>
+                                    <td>
+                                        <span className={`badge ${
+                                            loan.status === 'RESERVED' ? 'bg-warning text-dark' :
+                                            loan.status === 'COLLECTED' ? 'bg-info text-white' :
+                                            'bg-secondary'
+                                        }`}>
+                                            {loan.status}
+                                        </span>
+                                    </td>
+                                    <td><small>{new Date(loan.created_at).toLocaleDateString()}</small></td>
+                                    <td>
+                                        {loan.status === 'RESERVED' && (
+                                            <button className="btn btn-sm btn-success me-1" onClick={() => markCollected(loan.id)}>
+                                                Collected
+                                            </button>
+                                        )}
+                                        {loan.status === 'COLLECTED' && (
+                                            <button className="btn btn-sm btn-primary" onClick={() => returnDevice(loan.id)}>
+                                                Returned
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {userRole === 'Staff' && (
             <div className="card mb-4">
@@ -199,19 +354,48 @@ function App() {
                               <li key={loan.id} className="list-group-item d-flex justify-content-between align-items-center">
                                   <div>
                                       <strong>{loan.device_name}</strong>
-                                      <br/>
-                                      <small className="text-muted">
-                                          Status: {loan.status} | Date: {new Date(loan.created_at).toLocaleDateString()}
+                                      <div className="mt-1">
+                                          {getLoanStatusBadge(loan)}
+                                      </div>
+                                      <small className="text-muted d-block mt-1">
+                                          Date: {new Date(loan.created_at).toLocaleDateString()}
+                                          {loan.expected_return_date && (
+                                              <> | Due: {new Date(loan.expected_return_date).toLocaleDateString()}</>
+                                          )}
                                       </small>
                                   </div>
-                                  {loan.status === 'RESERVED' && (
-                                      <button 
-                                          className="btn btn-sm btn-warning"
-                                          onClick={() => returnDevice(loan.id)}
-                                      >
-                                          Return
-                                      </button>
-                                  )}
+                              </li>
+                          ))}
+                      </ul>
+                  )}
+              </div>
+            </div>
+          )}
+
+          {userRole !== 'Staff' && (
+            <div className="card mb-4">
+              <div className="card-header bg-warning text-dark">My Waitlist</div>
+              <div className="card-body">
+                  {myWaitlist.length === 0 ? (
+                      <p>You are not on any waitlists.</p>
+                  ) : (
+                      <ul className="list-group">
+                          {myWaitlist.map(item => (
+                              <li key={item.id} className="list-group-item d-flex justify-content-between align-items-center">
+                                  <div>
+                                    <strong>{item.device_name}</strong>
+                                    <br/>
+                                    <small className="text-muted">
+                                        Joined: {new Date(item.created_at).toLocaleDateString()}
+                                    </small>
+                                  </div>
+                                  <div>
+                                    {item.quantity_available > 0 ? (
+                                        <span className="badge bg-success">Available! Reserve Now</span>
+                                    ) : (
+                                        <span className="badge bg-secondary">Waiting for stock</span>
+                                    )}
+                                  </div>
                               </li>
                           ))}
                       </ul>
@@ -245,13 +429,23 @@ function App() {
                         
                         {/* 核心功能：预定 */}
                         {userRole !== 'Staff' && (
-                            <button 
-                              className="btn btn-success mt-2 me-2" 
-                              onClick={() => reserveDevice(device.model_id)}
-                              disabled={device.quantity_available <= 0}
-                            >
-                              {device.quantity_available > 0 ? 'Reserve Now' : 'Out of Stock'}
-                            </button>
+                            <div>
+                                {device.quantity_available > 0 ? (
+                                    <button 
+                                      className="btn btn-success mt-2 me-2" 
+                                      onClick={() => reserveDevice(device.model_id)}
+                                    >
+                                      Reserve Now
+                                    </button>
+                                ) : (
+                                    <button 
+                                      className="btn btn-warning mt-2 me-2" 
+                                      onClick={() => joinWaitlist(device.model_id)}
+                                    >
+                                      Join Waitlist
+                                    </button>
+                                )}
+                            </div>
                         )}
 
                         {/* Manager 功能：编辑 & 删除 */}

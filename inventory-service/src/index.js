@@ -32,12 +32,37 @@ const log = (level, message, extra = {}) => {
     }));
 };
 
-// 核心 API: 获取设备列表
-// GET /devices
+// 核心 API: 获取设备列表 (支持 brand, category, name 过滤)
+// GET /devices?brand=Apple&category=Laptop
 app.get('/devices', async (req, res) => {
-    log('INFO', 'Fetching device list', { correlationId: req.correlationId });
+    const { brand, category, name } = req.query;
+    log('INFO', 'Fetching device list', { correlationId: req.correlationId, filters: { brand, category, name } });
+    
+    let query = 'SELECT * FROM devices';
+    const params = [];
+    const conditions = [];
+
+    if (brand) {
+        params.push(brand);
+        conditions.push(`brand = $${params.length}`);
+    }
+    if (category) {
+        params.push(category);
+        conditions.push(`category = $${params.length}`);
+    }
+    if (name) {
+        params.push(`%${name}%`);
+        conditions.push(`name ILIKE $${params.length}`);
+    }
+
+    if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY model_id';
+
     try {
-        const result = await pool.query('SELECT * FROM devices ORDER BY model_id');
+        const result = await pool.query(query, params);
         log('INFO', `Successfully fetched ${result.rows.length} devices`, { correlationId: req.correlationId });
         res.json(result.rows);
     } catch (err) {
@@ -49,12 +74,12 @@ app.get('/devices', async (req, res) => {
 // 新增 API: 添加设备 (Manager)
 // POST /devices
 app.post('/devices', async (req, res) => {
-    const { name, quantity_available } = req.body;
-    log('INFO', 'Adding new device', { correlationId: req.correlationId, name, quantity_available });
+    const { name, brand, category, quantity_available } = req.body;
+    log('INFO', 'Adding new device', { correlationId: req.correlationId, name, brand, category, quantity_available });
     try {
         const result = await pool.query(
-            'INSERT INTO devices (name, quantity_available) VALUES ($1, $2) RETURNING *',
-            [name, quantity_available]
+            'INSERT INTO devices (name, brand, category, quantity_available) VALUES ($1, $2, $3, $4) RETURNING *',
+            [name, brand, category, quantity_available]
         );
         res.status(201).json(result.rows[0]);
     } catch (err) {

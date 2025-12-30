@@ -39,7 +39,7 @@ describe('Notification Service', () => {
     it('should process message when received', async () => {
         // Setup mock to trigger callback immediately
         mockChannel.consume.mockImplementation(async (queue, callback) => {
-            const content = JSON.stringify({ event: 'TEST', loanId: 123, email: 'test@test.com' });
+            const content = JSON.stringify({ event: 'LOAN_CREATED', loanId: 123, email: 'test@test.com', expectedReturnDate: '2023-01-01' });
             
             // Execute the callback
             const promise = callback({ content: Buffer.from(content) });
@@ -59,12 +59,18 @@ describe('Notification Service', () => {
         expect(mockChannel.consume).toHaveBeenCalled();
     });
     
-    it('sendEmailMock should simulate sending email', async () => {
-        const data = { email: 'test@example.com', loanId: '123' };
-        const promise = sendEmailMock(data);
-        
-        jest.runAllTimers();
-        
-        await expect(promise).resolves.toBeUndefined();
+    it('sendEmailMock should simulate sending email for various events', async () => {
+        const events = [
+            { event: 'LOAN_CREATED', email: 'test@example.com', loanId: '123', expectedReturnDate: '2023-01-01' },
+            { event: 'LOAN_COLLECTED', email: 'test@example.com', loanId: '123' },
+            { event: 'LOAN_RETURNED', email: 'test@example.com', loanId: '123' },
+            { event: 'WAITLIST_AVAILABLE', email: 'test@example.com', deviceModelId: '99' }
+        ];
+
+        for (const data of events) {
+            const promise = sendEmailMock(data);
+            jest.runAllTimers();
+            await expect(promise).resolves.toBeUndefined();
+        }
     });
 });

@@ -25,7 +25,7 @@ async function startConsumer() {
         channel.consume(queue, async (msg) => {
             if (msg !== null) {
                 const content = JSON.parse(msg.content.toString());
-                console.log(`[x] Received Event: ${content.event} for Loan ID: ${content.loanId}`);
+                console.log(`[x] Received Event: ${content.event}`);
 
                 // 模拟耗时的邮件发送过程
                 await sendEmailMock(content);
@@ -43,8 +43,32 @@ async function startConsumer() {
 }
 
 async function sendEmailMock(data) {
+    let subject, body;
+    
+    switch (data.event) {
+        case 'LOAN_CREATED':
+            subject = 'Loan Reservation Confirmed';
+            body = `Your device reservation (ID: ${data.loanId}) is confirmed. Please pick it up. Expected Return Date: ${data.expectedReturnDate}`;
+            break;
+        case 'LOAN_COLLECTED':
+            subject = 'Device Collected';
+            body = `You have collected the device (Loan ID: ${data.loanId}). Please return it on time.`;
+            break;
+        case 'LOAN_RETURNED':
+            subject = 'Device Returned';
+            body = `You have successfully returned the device (Loan ID: ${data.loanId}). Thank you.`;
+            break;
+        case 'WAITLIST_AVAILABLE':
+            subject = 'Device Available';
+            body = `A device you are interested in (Model ID: ${data.deviceModelId}) is now available! Reserve it quickly.`;
+            break;
+        default:
+            subject = 'Notification';
+            body = JSON.stringify(data);
+    }
+
     // 这里并没有真的发出去，但在日志里留证
-    console.log(`[EMAIL SENT] To: ${data.email}, Subject: Loan Confirmation, Body: Your device reservation (ID: ${data.loanId}) is confirmed.`);
+    console.log(`[EMAIL SENT] To: ${data.email}, Subject: ${subject}, Body: ${body}`);
     return new Promise(resolve => setTimeout(resolve, 500)); // 模拟网络延迟
 }
 
