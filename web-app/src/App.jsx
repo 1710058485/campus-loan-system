@@ -67,15 +67,23 @@ function App() {
 
   // 1. 获取设备列表 (从 Inventory Service)
   useEffect(() => {
-    fetchDevices();
-    if (isAuthenticated) {
-        if (userRole === 'Staff') {
-            fetchAllLoans();
-        } else {
-            fetchMyLoans();
-            fetchMyWaitlist();
+    let isMounted = true;
+    
+    const loadData = async () => {
+        await fetchDevices();
+        if (isAuthenticated && isMounted) {
+            if (userRole === 'Staff') {
+                await fetchAllLoans();
+            } else {
+                await fetchMyLoans();
+                await fetchMyWaitlist();
+            }
         }
-    }
+    };
+    
+    loadData();
+    
+    return () => { isMounted = false; };
   }, [fetchDevices, fetchMyLoans, fetchMyWaitlist, fetchAllLoans, isAuthenticated, userRole]);
 
   // 2. 获取用户角色 (从 Token 解析)
