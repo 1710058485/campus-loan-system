@@ -125,7 +125,7 @@ app.put('/devices/:id', checkJwt, checkRole('Staff'), async (req, res) => {
 
 // API: delete devices, called by manager
 // DELETE /devices/:id
-app.delete('/devices/:id', async (req, res) => {
+app.delete('/devices/:id', checkJwt, checkRole('Staff'), async (req, res) => {
     const { id } = req.params;
     log('INFO', 'Deleting device', { correlationId: req.correlationId, id });
     try {
