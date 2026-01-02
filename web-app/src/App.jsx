@@ -259,9 +259,9 @@ function App() {
       <h1>Campus Device Loan System</h1>
       
       {!isAuthenticated ? (
-        <div className="text-center mt-5">
+        <div className="text-center mt-5 mb-5">
           <p className="lead mb-4" style={{ fontSize: '1.2rem', color: '#666' }}>
-            Please log in to reserve equipment for your campus projects.
+            Welcome! Browse our equipment below. Log in to reserve devices.
           </p>
           <button className="btn btn-primary btn-lg" onClick={() => loginWithRedirect()}>
             Log In (Student/Staff)
@@ -412,88 +412,101 @@ function App() {
               </div>
             </div>
           )}
+        </div>
+      )}
 
-          <div className="card">
-            <div className="card-header">Device List</div>
-            <div className="card-body">
-              <div className="row">
-                {devices.map((device) => (
-                  <div className="col-md-6 mb-3" key={device.model_id}>
-                    <div className="card h-100" style={{ background: '#f8f9fa', border: '1px solid #eee' }}>
-                      <div className="card-body text-center">
-                        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📱</div>
-                        <h5 className="card-title mb-3">{device.name}</h5>
-                        
-                        <div className="mb-3">
-                            <span className={`badge rounded-pill ${
-                                device.quantity_available === 0 ? 'bg-danger' : 
-                                device.quantity_available < 3 ? 'bg-warning text-dark' : 'bg-success'
-                            }`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
-                                {device.quantity_available === 0 ? 'Out of Stock' : 
-                                 device.quantity_available < 3 ? `Low Stock: ${device.quantity_available}` : 
-                                 `${device.quantity_available} Available`}
-                            </span>
-                        </div>
-                        
-                        {userRole !== 'Staff' && (
-                            <div>
-                                {device.quantity_available > 0 ? (
-                                    <button 
-                                      className="btn btn-success mt-2 me-2" 
-                                      onClick={() => reserveDevice(device.model_id)}
-                                    >
-                                      Reserve Now
-                                    </button>
-                                ) : (
-                                    <button 
-                                      className="btn btn-warning mt-2 me-2" 
-                                      onClick={() => joinWaitlist(device.model_id)}
-                                    >
-                                      Join Waitlist
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        {userRole === 'Staff' && (
-                          <div className="mt-2">
-                              <button 
-                                  className="btn btn-sm btn-outline-secondary me-2"
-                                  onClick={() => updateDeviceStock(device.model_id, device.quantity_available)}
-                              >
-                                  Edit
-                              </button>
-                              <button 
-                                  className="btn btn-sm btn-outline-danger"
-                                  onClick={() => deleteDevice(device.model_id)}
-                              >
-                                  Remove
-                              </button>
-                          </div>
-                        )}
-                      </div>
+      {/* Device List - Always Visible */}
+      <div className="card">
+        <div className="card-header">Device List</div>
+        <div className="card-body">
+          <div className="row">
+            {devices.map((device) => (
+              <div className="col-md-6 mb-3" key={device.model_id}>
+                <div className="card h-100" style={{ background: '#f8f9fa', border: '1px solid #eee' }}>
+                  <div className="card-body text-center">
+                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📱</div>
+                    <h5 className="card-title mb-3">{device.name}</h5>
+                    
+                    <div className="mb-3">
+                        <span className={`badge rounded-pill ${
+                            device.quantity_available === 0 ? 'bg-danger' : 
+                            device.quantity_available < 3 ? 'bg-warning text-dark' : 'bg-success'
+                        }`} style={{ fontSize: '0.9rem', padding: '8px 16px' }}>
+                            {device.quantity_available === 0 ? 'Out of Stock' : 
+                             device.quantity_available < 3 ? `Low Stock: ${device.quantity_available}` : 
+                             `${device.quantity_available} Available`}
+                        </span>
                     </div>
-                  </div>
-                ))}
-                
-                {devices.length === 0 && (
-                  <div className="col-12 text-center">
-                    <p className="text-muted">Loading devices or no devices available...</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+                    
+                    {!isAuthenticated && (
+                        <div>
+                            <button 
+                              className="btn btn-outline-primary mt-2" 
+                              onClick={() => loginWithRedirect()}
+                            >
+                              Log in to Reserve
+                            </button>
+                        </div>
+                    )}
 
-          {status && (
-            <div className={`alert mt-4 ${status.includes('Error') ? 'alert-danger' : 'alert-success'}`}>
-              {status}
-            </div>
-          )}
+                    {isAuthenticated && userRole !== 'Staff' && (
+                        <div>
+                            {device.quantity_available > 0 ? (
+                                <button 
+                                  className="btn btn-success mt-2 me-2" 
+                                  onClick={() => reserveDevice(device.model_id)}
+                                >
+                                  Reserve Now
+                                </button>
+                            ) : (
+                                <button 
+                                  className="btn btn-warning mt-2 me-2" 
+                                  onClick={() => joinWaitlist(device.model_id)}
+                                >
+                                  Join Waitlist
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {isAuthenticated && userRole === 'Staff' && (
+                      <div className="mt-2">
+                          <button 
+                              className="btn btn-sm btn-outline-secondary me-2"
+                              onClick={() => updateDeviceStock(device.model_id, device.quantity_available)}
+                          >
+                              Edit
+                          </button>
+                          <button 
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => deleteDevice(device.model_id)}
+                          >
+                              Remove
+                          </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {devices.length === 0 && (
+              <div className="col-12 text-center">
+                <p className="text-muted">Loading devices or no devices available...</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {status && (
+        <div className={`alert mt-4 ${status.includes('Error') ? 'alert-danger' : 'alert-success'}`}>
+          {status}
         </div>
       )}
     </div>
   );
+
 }
 
 export default App;
