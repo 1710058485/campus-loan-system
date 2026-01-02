@@ -8,12 +8,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 数据库连接 (复用同一个 Postgres 实例)
+// Database connection, reuse on postgres instance
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://admin:password123@localhost:5432/campus_db'
 });
 
-// 中间件：Correlation ID & Logger (Observability)
+// Middleware: Correlation id & Logger for observability
 app.use((req, res, next) => {
     const correlationId = req.headers['x-correlation-id'] || uuidv4();
     req.correlationId = correlationId;
@@ -32,7 +32,7 @@ const log = (level, message, extra = {}) => {
     }));
 };
 
-// 核心 API: 获取设备列表 (支持 brand, category, name 过滤)
+// Core API: get devices and filter with brand category and name
 // GET /devices?brand=Apple&category=Laptop
 app.get('/devices', async (req, res) => {
     const { brand, category, name } = req.query;
@@ -42,6 +42,7 @@ app.get('/devices', async (req, res) => {
     const params = [];
     const conditions = [];
 
+    // filtering conditions
     if (brand) {
         params.push(brand);
         conditions.push(`brand = $${params.length}`);
@@ -59,6 +60,7 @@ app.get('/devices', async (req, res) => {
         query += ' WHERE ' + conditions.join(' AND ');
     }
     
+    // construct the query
     query += ' ORDER BY model_id';
 
     try {
@@ -71,7 +73,7 @@ app.get('/devices', async (req, res) => {
     }
 });
 
-// 新增 API: 添加设备 (Manager)
+// API: add devices, called by manager
 // POST /devices
 app.post('/devices', async (req, res) => {
     const { name, brand, category, quantity_available } = req.body;
@@ -88,7 +90,7 @@ app.post('/devices', async (req, res) => {
     }
 });
 
-// 新增 API: 更新设备 (Manager)
+// API: update devices, called by manager
 // PUT /devices/:id
 app.put('/devices/:id', async (req, res) => {
     const { id } = req.params;
@@ -109,7 +111,7 @@ app.put('/devices/:id', async (req, res) => {
     }
 });
 
-// 新增 API: 删除设备 (Manager)
+// API: delete devices, called by manager
 // DELETE /devices/:id
 app.delete('/devices/:id', async (req, res) => {
     const { id } = req.params;
@@ -129,10 +131,10 @@ app.delete('/devices/:id', async (req, res) => {
     }
 });
 
-// 健康检查
+// Health check API
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
-const PORT = process.env.PORT || 3002; // 注意：这是 3002 端口
+const PORT = process.env.PORT || 3002;
 if (require.main === module) {
     app.listen(PORT, () => {
         log('INFO', `Inventory Service running on port ${PORT}`);

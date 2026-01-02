@@ -7,15 +7,15 @@ import './App.css';
 function App() {
   const { loginWithRedirect, logout, user, isAuthenticated, getAccessTokenSilently } = useAuth0();
   const [devices, setDevices] = useState([]);
-  const [myLoans, setMyLoans] = useState([]); // 新增：用户借阅列表
-  const [myWaitlist, setMyWaitlist] = useState([]); // 新增：用户候补名单
-  const [allLoans, setAllLoans] = useState([]); // 新增：Staff 查看所有借阅
+  const [myLoans, setMyLoans] = useState([]);
+  const [myWaitlist, setMyWaitlist] = useState([]);
+  const [allLoans, setAllLoans] = useState([]);
   const [status, setStatus] = useState('');
-  const [userRole, setUserRole] = useState(''); // 存储当前用户角色
+  const [userRole, setUserRole] = useState('');
 
   const fetchDevices = useCallback(async () => {
     try {
-      // 指向 Inventory Service (3002)
+      // Inventory Service (3002)
       const res = await axios.get('http://localhost:3002/devices'); 
       setDevices(res.data);
     } catch (err) {
@@ -23,7 +23,7 @@ function App() {
     }
   }, []);
 
-  // 新增：获取我的借阅
+  // API: get my loans
   const fetchMyLoans = useCallback(async () => {
     if (!user) return;
     try {
@@ -37,7 +37,7 @@ function App() {
     }
   }, [user, getAccessTokenSilently]);
 
-  // 新增：获取我的候补名单
+  // API: get my waitlist
   const fetchMyWaitlist = useCallback(async () => {
     if (!user) return;
     try {
@@ -51,7 +51,7 @@ function App() {
     }
   }, [user, getAccessTokenSilently]);
 
-  // 新增：Staff 获取所有借阅
+  // API: get all loans (Staff only)
   const fetchAllLoans = useCallback(async () => {
     if (userRole !== 'Staff') return;
     try {
@@ -65,7 +65,7 @@ function App() {
     }
   }, [userRole, getAccessTokenSilently]);
 
-  // 1. 获取设备列表 (从 Inventory Service)
+  // API: get all devices (Inventory Service)
   useEffect(() => {
     let isMounted = true;
     
@@ -86,16 +86,15 @@ function App() {
     return () => { isMounted = false; };
   }, [fetchDevices, fetchMyLoans, fetchMyWaitlist, fetchAllLoans, isAuthenticated, userRole]);
 
-  // 2. 获取用户角色 (从 Token 解析)
+  // API: get user role (from Token)
   useEffect(() => {
     const checkRole = async () => {
       if (isAuthenticated) {
         try {
           const token = await getAccessTokenSilently();
           const decoded = jwtDecode(token);
-          // 这里的 namespace 必须和你 Auth0 Action 里写的一样
           const roles = decoded['https://campus-loan-system/roles'];
-          setUserRole(roles && roles.length > 0 ? roles[0] : 'Student'); // 默认 Student
+          setUserRole(roles && roles.length > 0 ? roles[0] : 'Student');
         } catch (e) {
           console.error(e);
         }
@@ -104,28 +103,26 @@ function App() {
     checkRole();
   }, [isAuthenticated, getAccessTokenSilently]);
 
-  // 调用后端 API：预定设备
+  // API: reserve a device
   const reserveDevice = async (modelId) => {
     try {
       setStatus('Processing...');
       
-      // 1. 获取 Token (这一步 Auth0 会自动处理刷新)
+      // get access token (Auth0 will handle token refresh)
       const token = await getAccessTokenSilently();
 
-      // 2. 发起请求
-      // 指向 Loan Service (3001)
+      // request to reserve a device
       const response = await axios.post('http://localhost:3001/reservations', 
         { userId: user.sub, deviceModelId: modelId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setStatus(`Success! Loan ID: ${response.data.loanId}`);
-      fetchDevices(); // 刷新设备列表
-      fetchMyLoans(); // 刷新我的借阅列表
-      fetchMyWaitlist(); // 刷新我的候补名单
+      fetchDevices(); // refreshes
+      fetchMyLoans(); // refreshes
+      fetchMyWaitlist(); // refreshes
     } catch (error) {
       if (error.response) {
-        // 展示 HTTP 错误状态码，比如 403 Forbidden, 409 Conflict
         setStatus(`Error: ${error.response.status} - ${error.response.data.error || error.response.statusText}`);
       } else {
         setStatus(`Error: ${error.message}`);
@@ -133,7 +130,7 @@ function App() {
     }
   };
 
-  // 新增：归还设备
+  // API: return a device
   const returnDevice = async (loanId) => {
     try {
         const token = await getAccessTokenSilently();
@@ -142,11 +139,11 @@ function App() {
             { headers: { Authorization: `Bearer ${token}` } }
         );
         alert('Device returned successfully!');
-        fetchDevices();
+        fetchDevices(); // refreshes
         if (userRole === 'Staff') {
-            fetchAllLoans();
+            fetchAllLoans(); // refreshes
         } else {
-            fetchMyLoans();
+            fetchMyLoans(); // refreshes
         }
     } catch (error) {
         console.error(error);
@@ -154,7 +151,7 @@ function App() {
     }
   };
 
-  // Staff: 标记为已领取
+  // API: mark a device as collected (Inventory Service)
   const markCollected = async (loanId) => {
     try {
         const token = await getAccessTokenSilently();
@@ -170,7 +167,7 @@ function App() {
     }
   };
 
-  // 新增：加入候补名单
+  // API: join waitlist
   const joinWaitlist = async (modelId) => {
     try {
         const token = await getAccessTokenSilently();
@@ -179,14 +176,14 @@ function App() {
             { headers: { Authorization: `Bearer ${token}` } }
         );
         alert('Joined waitlist successfully! You will be notified when the device is available.');
-        fetchMyWaitlist(); // 刷新
+        fetchMyWaitlist();
     } catch (error) {
         console.error(error);
         alert('Failed to join waitlist');
     }
   };
 
-  // Manager: 删除设备
+  // API: delete a device
   const deleteDevice = async (id) => {
     if (!window.confirm("Are you sure you want to delete this device?")) return;
     try {
@@ -199,7 +196,7 @@ function App() {
     }
   };
 
-  // Manager: 添加设备
+  // API: add a device
   const addDevice = async (name, quantity) => {
     try {
       await axios.post('http://localhost:3002/devices', { name, quantity_available: quantity });
@@ -211,7 +208,7 @@ function App() {
     }
   };
 
-  // Manager: 更新库存
+  // API: update device stock
   const updateDeviceStock = async (id, quantity) => {
     try {
         const newQty = parseInt(prompt("Enter new quantity:", quantity));
@@ -225,7 +222,7 @@ function App() {
     }
   };
 
-  // 辅助函数：计算剩余天数状态
+  // API: get loan status badge (Frontend)
   const getLoanStatusBadge = (loan) => {
     if (loan.status === 'RETURNED') {
         return <span className="badge bg-secondary">RETURNED</span>;
@@ -423,7 +420,6 @@ function App() {
                         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📱</div>
                         <h5 className="card-title mb-3">{device.name}</h5>
                         
-                        {/* 库存状态 Badge */}
                         <div className="mb-3">
                             <span className={`badge rounded-pill ${
                                 device.quantity_available === 0 ? 'bg-danger' : 
@@ -435,7 +431,6 @@ function App() {
                             </span>
                         </div>
                         
-                        {/* 核心功能：预定 */}
                         {userRole !== 'Staff' && (
                             <div>
                                 {device.quantity_available > 0 ? (
@@ -456,7 +451,6 @@ function App() {
                             </div>
                         )}
 
-                        {/* Manager 功能：编辑 & 删除 */}
                         {userRole === 'Staff' && (
                           <div className="mt-2">
                               <button 

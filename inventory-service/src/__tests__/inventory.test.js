@@ -52,6 +52,37 @@ describe('Inventory Service API', () => {
         expect(res.statusCode).toEqual(201);
         expect(res.body).toEqual(savedDevice);
     });
+
+    it('PUT /devices/:id should update device quantity', async () => {
+        const updatedDevice = { model_id: '1', quantity_available: 15 };
+        pool.query.mockResolvedValue({ rows: [updatedDevice] });
+
+        const res = await request(app).put('/devices/1').send({ quantity_available: 15 });
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toEqual(updatedDevice);
+    });
+
+    it('PUT /devices/:id should return 404 if device not found', async () => {
+        pool.query.mockResolvedValue({ rows: [] });
+
+        const res = await request(app).put('/devices/999').send({ quantity_available: 15 });
+        expect(res.statusCode).toEqual(404);
+    });
+
+    it('DELETE /devices/:id should delete a device', async () => {
+        pool.query.mockResolvedValue({ rows: [{ model_id: '1' }] });
+
+        const res = await request(app).delete('/devices/1');
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toEqual({ message: 'Device deleted successfully' });
+    });
+
+    it('DELETE /devices/:id should return 404 if device not found', async () => {
+        pool.query.mockResolvedValue({ rows: [] });
+
+        const res = await request(app).delete('/devices/999');
+        expect(res.statusCode).toEqual(404);
+    });
     
     // Error handling test
     it('GET /devices should handle errors', async () => {
