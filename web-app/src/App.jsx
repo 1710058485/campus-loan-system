@@ -214,7 +214,11 @@ function App() {
         const newQty = parseInt(prompt("Enter new quantity:", quantity));
         if (isNaN(newQty)) return;
         
-        await axios.put(`http://localhost:3002/devices/${id}`, { quantity_available: newQty });
+        const token = await getAccessTokenSilently();
+        await axios.put(`http://localhost:3002/devices/${id}`, 
+            { quantity_available: newQty },
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
         fetchDevices();
     } catch (error) {
         console.error(error);

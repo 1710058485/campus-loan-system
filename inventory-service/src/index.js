@@ -3,6 +3,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
+const { auth, requiredScopes, claimCheck } = require('express-oauth2-jwt-bearer');
 
 const app = express();
 app.use(cors());
@@ -11,6 +12,17 @@ app.use(express.json());
 // Database connection, reuse on postgres instance
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://admin:password123@localhost:5432/campus_db'
+});
+
+// JWT and RBAC middleware for identity check
+const checkJwt = auth({
+  audience: 'https://campus-loan-api',
+  issuerBaseURL: `https://dev-fnovcg4yh5yl3vxf.us.auth0.com/`,
+  tokenSigningAlg: 'RS256',
+});
+const checkRole = (role) => claimCheck((claims) => {
+  const roles = claims['https://campus-loan-system/roles'];
+  return roles && roles.includes(role);
 });
 
 // Middleware: Correlation id & Logger for observability
@@ -75,7 +87,7 @@ app.get('/devices', async (req, res) => {
 
 // API: add devices, called by manager
 // POST /devices
-app.post('/devices', async (req, res) => {
+app.post('/devices', checkJwt, checkRole('Staff'), async (req, res) => {
     const { name, brand, category, quantity_available } = req.body;
     log('INFO', 'Adding new device', { correlationId: req.correlationId, name, brand, category, quantity_available });
     try {
@@ -92,7 +104,7 @@ app.post('/devices', async (req, res) => {
 
 // API: update devices, called by manager
 // PUT /devices/:id
-app.put('/devices/:id', async (req, res) => {
+app.put('/devices/:id', checkJwt, checkRole('Staff'), async (req, res) => {
     const { id } = req.params;
     const { quantity_available } = req.body;
     log('INFO', 'Updating device', { correlationId: req.correlationId, id, quantity_available });

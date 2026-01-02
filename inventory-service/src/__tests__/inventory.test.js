@@ -1,5 +1,14 @@
 const request = require('supertest');
 
+// Mock express-oauth2-jwt-bearer
+jest.mock('express-oauth2-jwt-bearer', () => {
+    return {
+        auth: jest.fn(() => (req, res, next) => next()),
+        claimCheck: jest.fn(() => (req, res, next) => next()),
+        requiredScopes: jest.fn(() => (req, res, next) => next()),
+    };
+});
+
 // Mock pg
 jest.mock('pg', () => {
   const mPool = {
