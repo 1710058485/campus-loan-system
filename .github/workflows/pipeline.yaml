@@ -77,13 +77,13 @@ jobs:
           npm test run
           npm run build
 
-  # Job 5 - build and push test images to GHCR
-  build-and-push-test:
+  # Job 5 - Build and Push Staging Images
+  build-and-push-staging:
     needs: [inventory-service-test, loan-service-test, notification-service-test, web-app-test]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
-      name: Test
+      name: Staging
     steps:
       - uses: actions/checkout@v4
 
@@ -94,53 +94,76 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Inventory Service (Test)
+      - name: Build and push Inventory Service (Staging)
         uses: docker/build-push-action@v5
         with:
           context: ./inventory-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/inventory-service:test
+          tags: ghcr.io/${{ github.repository }}/inventory-service:staging
 
-      - name: Build and push Loan Service (Test)
+      - name: Build and push Loan Service (Staging)
         uses: docker/build-push-action@v5
         with:
           context: ./loan-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/loan-service:test
+          tags: ghcr.io/${{ github.repository }}/loan-service:staging
 
-      - name: Build and push Notification Service (Test)
+      - name: Build and push Notification Service (Staging)
         uses: docker/build-push-action@v5
         with:
           context: ./notification-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/notification-service:test
+          tags: ghcr.io/${{ github.repository }}/notification-service:staging
 
-  # Job 6 - deploy test images to Azure Container Apps
-  deploy-prod-azure:
-    needs: build-and-push-test
+  # Job 6 - Deploy to Staging (Azure Container Apps)
+  deploy-staging-azure:
+    needs: build-and-push-staging
     runs-on: ubuntu-latest
     environment:
-      name: Production
+      name: Staging
+      # URL for Staging environment (optional, replace with real URL)
+      url: https://staging.campus-loan-system.azurecontainer.io 
     steps:
       - uses: actions/checkout@v4
-
-      # 1. Azure Container Apps
+      
       - name: Log in to Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 2. Inventory Service
+      # Note: In a real scenario, we might deploy to a "staging" slot or a separate environment.
+      # Here we demonstrate the deployment step.
+      - name: Echo Staging Deployment
+        run: echo "Deploying to Staging Environment..."
+
+  # Job 7 - Deploy to Production (Gated by Environment Protection Rules)
+  deploy-prod-azure:
+    needs: deploy-staging-azure
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+      # Configure 'Required Reviewers' in GitHub Repo Settings -> Environments -> Production
+      # to enable the Manual Gate.
+      url: https://campus-loan-system.azurecontainer.io
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Inventory Service
       - name: Build and Deploy Inventory Service
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ./inventory-service  # 源代码路径
-          acrName: ${{ secrets.ACR_NAME }}    # 你的 Azure Container Registry 名字
+          appSourcePath: ./inventory-service
+          acrName: ${{ secrets.ACR_NAME }}
           resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: inventory-service # 在 Azure 中显示的 App 名字
-          targetPort: 3000                    # 根据你的 Node.js 监听端口调整
+          containerAppName: inventory-service
+          targetPort: 3000
 
-      # 3. Loan Service
+      # Loan Service
       - name: Build and Deploy Loan Service
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -148,9 +171,9 @@ jobs:
           acrName: ${{ secrets.ACR_NAME }}
           resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
           containerAppName: loan-service
-          targetPort: 3000                 
+          targetPort: 3000
 
-      # 4. Notification Service
+      # Notification Service
       - name: Build and Deploy Notification Service
         uses: azure/container-apps-deploy-action@v2
         with:
@@ -158,14 +181,4 @@ jobs:
           acrName: ${{ secrets.ACR_NAME }}
           resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
           containerAppName: notification-service
-          targetPort: 3000                  
-
-      # 5. Web App
-      # - name: Build and Deploy Web App
-      #   uses: azure/container-apps-deploy-action@v2
-      #   with:
-      #     appSourcePath: ./web-app
-      #     acrName: ${{ secrets.ACR_NAME }}
-      #     resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-      #     containerAppName: web-app
-      #     targetPort: 80
+          targetPort: 3000
