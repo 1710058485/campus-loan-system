@@ -13,10 +13,13 @@ function App() {
   const [status, setStatus] = useState('');
   const [userRole, setUserRole] = useState('');
 
+  const INVENTORY_API = import.meta.env.VITE_INVENTORY_API_URL || 'http://localhost:3002';
+  const LOAN_API = import.meta.env.VITE_LOAN_API_URL || 'http://localhost:3001';
+
   const fetchDevices = useCallback(async () => {
     try {
-      // Inventory Service (3002)
-      const res = await axios.get('http://localhost:3002/devices'); 
+      // Inventory Service
+      const res = await axios.get(`${INVENTORY_API}/devices`); 
       setDevices(res.data);
     } catch (err) {
       console.error("Failed to fetch devices", err);
@@ -28,7 +31,7 @@ function App() {
     if (!user) return;
     try {
       const token = await getAccessTokenSilently();
-      const res = await axios.get(`http://localhost:3001/loans?userId=${user.sub}`, {
+      const res = await axios.get(`${LOAN_API}/loans?userId=${user.sub}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMyLoans(res.data);
@@ -42,7 +45,7 @@ function App() {
     if (!user) return;
     try {
       const token = await getAccessTokenSilently();
-      const res = await axios.get(`http://localhost:3001/waitlist?userId=${user.sub}`, {
+      const res = await axios.get(`${LOAN_API}/waitlist?userId=${user.sub}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMyWaitlist(res.data);
@@ -56,7 +59,7 @@ function App() {
     if (userRole !== 'Staff') return;
     try {
       const token = await getAccessTokenSilently();
-      const res = await axios.get('http://localhost:3001/loans', {
+      const res = await axios.get(`${LOAN_API}/loans`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAllLoans(res.data);
@@ -64,6 +67,7 @@ function App() {
       console.error("Failed to fetch all loans", err);
     }
   }, [userRole, getAccessTokenSilently]);
+
 
   // API: get all devices (Inventory Service)
   useEffect(() => {
@@ -112,7 +116,7 @@ function App() {
       const token = await getAccessTokenSilently();
 
       // request to reserve a device
-      const response = await axios.post('http://localhost:3001/reservations', 
+      const response = await axios.post(`${LOAN_API}/reservations`, 
         { userId: user.sub, deviceModelId: modelId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -134,7 +138,7 @@ function App() {
   const returnDevice = async (loanId) => {
     try {
         const token = await getAccessTokenSilently();
-        await axios.post('http://localhost:3001/returns', 
+        await axios.post(`${LOAN_API}/returns`, 
             { loanId },
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -155,7 +159,7 @@ function App() {
   const markCollected = async (loanId) => {
     try {
         const token = await getAccessTokenSilently();
-        await axios.post('http://localhost:3001/collect',
+        await axios.post(`${LOAN_API}/collect`,
             { loanId },
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -171,7 +175,7 @@ function App() {
   const joinWaitlist = async (modelId) => {
     try {
         const token = await getAccessTokenSilently();
-        await axios.post('http://localhost:3001/waitlist',
+        await axios.post(`${LOAN_API}/waitlist`,
             { userId: user.sub, deviceModelId: modelId, email: user.email },
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -187,7 +191,7 @@ function App() {
   const deleteDevice = async (id) => {
     if (!window.confirm("Are you sure you want to delete this device?")) return;
     try {
-        await axios.delete(`http://localhost:3002/devices/${id}`);
+        await axios.delete(`${INVENTORY_API}/devices/${id}`);
         alert('Device deleted successfully!');
         fetchDevices();
     } catch (error) {
@@ -199,7 +203,7 @@ function App() {
   // API: add a device
   const addDevice = async (name, quantity) => {
     try {
-      await axios.post('http://localhost:3002/devices', { name, quantity_available: quantity });
+      await axios.post(`${INVENTORY_API}/devices`, { name, quantity_available: quantity });
       alert('Device added successfully!');
       fetchDevices();
     } catch (error) {
@@ -215,7 +219,7 @@ function App() {
         if (isNaN(newQty)) return;
         
         const token = await getAccessTokenSilently();
-        await axios.put(`http://localhost:3002/devices/${id}`, 
+        await axios.put(`${INVENTORY_API}/devices/${id}`, 
             { quantity_available: newQty },
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -270,12 +274,16 @@ function App() {
       ) : (
         <div>
           <div className="card mb-4">
-            <div className="card-body user-welcome">
-              <div>
-                <h5 className="mb-0">Welcome, {user.name} ({userRole})</h5>
-                <small style={{ color: '#888' }}>You are currently logged in.</small>
+            <div className="card-header bg-white border-0">
+              <div className="d-flex justify-content-between align-items-center">
+                <div>
+                  <h4 className="mb-0">Welcome, {user.name} ({userRole || 'Student'})</h4>
+                  <small className="text-muted">You are currently logged in.</small>
+                </div>
+                <button className="btn btn-secondary" onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>
+                  LOG OUT
+                </button>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => logout()}>Log Out</button>
             </div>
           </div>
 
@@ -504,6 +512,10 @@ function App() {
           {status}
         </div>
       )}
+
+      <footer className="mt-5 text-center text-muted">
+        <small>&copy; 2025 Campus Device Loan System. All rights reserved. (v1.0.1)</small>
+      </footer>
     </div>
   );
 

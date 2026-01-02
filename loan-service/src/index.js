@@ -47,6 +47,42 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://admin:password123@localhost:5432/campus_db'
 });
 
+// Init DB
+async function initDB() {
+    try {
+        // Wait a bit for inventory-service to create devices table (if concurrent start)
+        // In production, better to use retries or migrations
+        
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS loans (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255),
+                device_model_id INT,
+                status VARCHAR(20) DEFAULT 'RESERVED',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expected_return_date TIMESTAMP,
+                returned_at TIMESTAMP
+            );
+        `);
+        // Removed FK constraint to avoid startup race condition with devices table
+        // In real app, we should handle this better.
+        
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS waitlist (
+                id SERIAL PRIMARY KEY,
+                device_model_id INT,
+                user_id VARCHAR(255),
+                email VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("Loans and Waitlist tables ensured");
+    } catch (err) {
+        console.error("DB Init Failed", err);
+    }
+}
+initDB();
+
 // RabbitMQ Connection
 let channel;
 async function connectQueue() {

@@ -14,6 +14,39 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://admin:password123@localhost:5432/campus_db'
 });
 
+// Init DB
+async function initDB() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS devices (
+                model_id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                brand VARCHAR(50),
+                category VARCHAR(50),
+                quantity_available INT
+            );
+        `);
+        console.log("Devices table ensured");
+        
+        // Seed initial data if empty
+        const countRes = await pool.query('SELECT COUNT(*) FROM devices');
+        if (parseInt(countRes.rows[0].count) === 0) {
+            await pool.query(`
+                INSERT INTO devices (name, brand, category, quantity_available) VALUES
+                ('MacBook Pro M3', 'Apple', 'Laptop', 5),
+                ('Dell XPS 15', 'Dell', 'Laptop', 3),
+                ('Sony Alpha a7 IV', 'Sony', 'Camera', 2),
+                ('GoPro Hero 11', 'GoPro', 'Camera', 8),
+                ('Arduino Starter Kit', 'Arduino', 'Electronics', 10)
+            `);
+            console.log("Seeded initial devices");
+        }
+    } catch (err) {
+        console.error("DB Init Failed", err);
+    }
+}
+initDB();
+
 // JWT and RBAC middleware for identity check
 const checkJwt = auth({
   audience: 'https://campus-loan-api',
