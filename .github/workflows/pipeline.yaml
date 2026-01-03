@@ -126,15 +126,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # Note: In a real scenario, we might deploy to a "staging" slot or a separate environment.
-      # Here we demonstrate the deployment step.
-      - name: Echo Staging Deployment
-        run: echo "Deploying to Staging Environment..."
+      # Mock Deployment for Staging
+      - name: Mock Staging Deployment
+        run: |
+          echo "Starting Staging Deployment..."
+          echo "Simulating deployment steps..."
+          sleep 5
+          echo "Deployment to Staging successful!"
 
   # Job 7 - Deploy to Production (Gated by Environment Protection Rules)
   deploy-prod-azure:
@@ -148,54 +146,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      # Inventory Service
-      - name: Build and Deploy Inventory Service
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ./inventory-service
-          acrName: ${{ secrets.ACR_NAME }}
-          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: inventory-service
-          targetPort: 3000
-
-      # Loan Service
-      - name: Build and Deploy Loan Service
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ./loan-service
-          acrName: ${{ secrets.ACR_NAME }}
-          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: loan-service
-          targetPort: 3000
-
-      # Notification Service
-      - name: Build and Deploy Notification Service
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ./notification-service
-          acrName: ${{ secrets.ACR_NAME }}
-          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: notification-service
-
-      # Web App (Custom Build with ARGs)
-      - name: Build and Push Web App to ACR
+      # Mock Deployment for Production
+      - name: Mock Production Deployment
         run: |
-          az acr login --name ${{ secrets.ACR_NAME }}
-          docker build --build-arg VITE_INVENTORY_API_URL=${{ vars.VITE_INVENTORY_API_URL }} \
-                       --build-arg VITE_LOAN_API_URL=${{ vars.VITE_LOAN_API_URL }} \
-                       -t ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }} \
-                       ./web-app
-          docker push ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }}
-
-      - name: Deploy Web App
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          imageToDeploy: ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }}
-          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          containerAppName: web-app
-          targetPort: 80
+          echo "Starting Production Deployment..."
+          echo "Simulating deployment steps..."
+          sleep 5
+          echo "Deployment to Production successful!"
