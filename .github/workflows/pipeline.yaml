@@ -99,21 +99,21 @@ jobs:
         with:
           context: ./inventory-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/inventory-service:staging
+          tags: ghcr.io/${{ github.repository }}/inventory-service-new:staging
 
       - name: Build and push Loan Service (Staging)
         uses: docker/build-push-action@v5
         with:
           context: ./loan-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/loan-service:staging
+          tags: ghcr.io/${{ github.repository }}/loan-service-new:staging
 
       - name: Build and push Notification Service (Staging)
         uses: docker/build-push-action@v5
         with:
           context: ./notification-service
           push: true
-          tags: ghcr.io/${{ github.repository }}/notification-service:staging
+          tags: ghcr.io/${{ github.repository }}/notification-service-new:staging
 
   # Job 6 - Deploy to Staging (Azure Container Apps)
   deploy-staging-azure:
@@ -181,4 +181,21 @@ jobs:
           acrName: ${{ secrets.ACR_NAME }}
           resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
           containerAppName: notification-service
-          targetPort: 3000
+
+      # Web App (Custom Build with ARGs)
+      - name: Build and Push Web App to ACR
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
+          docker build --build-arg VITE_INVENTORY_API_URL=${{ vars.VITE_INVENTORY_API_URL }} \
+                       --build-arg VITE_LOAN_API_URL=${{ vars.VITE_LOAN_API_URL }} \
+                       -t ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }} \
+                       ./web-app
+          docker push ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }}
+
+      - name: Deploy Web App
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          imageToDeploy: ${{ secrets.ACR_NAME }}.azurecr.io/web-app:${{ github.sha }}
+          resourceGroup: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          containerAppName: web-app
+          targetPort: 80
