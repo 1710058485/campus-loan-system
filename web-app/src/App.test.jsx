@@ -17,6 +17,6 @@ vi.mock('@auth0/auth0-react', () => ({
 describe('App Component', () => {
     it('renders welcome message', () => {
         render(<App />);
-        expect(screen.getByText(/Campus Device Loan System/i)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Campus Device Loan System/i })).toBeInTheDocument();
     });
 });
